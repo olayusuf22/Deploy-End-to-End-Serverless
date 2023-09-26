@@ -1,0 +1,29 @@
+openapi: "3.0.1"
+info:
+  title: "Online Shop API"
+  version: "1"
+servers: []
+paths:
+  /checkout:
+    post:
+      responses:
+        "200":
+          description: "200 response"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Empty"
+      x-amazon-apigateway-integration:
+        type: "aws"
+        credentials: "${ExecutionRole}"
+        httpMethod: "POST"
+        uri: "arn:aws:apigateway:${Region}:states:action/StartSyncExecution"
+        responses:
+          default:
+            statusCode: "200"
+        passthroughBehavior: "when_no_match"
+components:
+  schemas:
+    Empty:
+      title: "Empty Schema"
+      type: "object"

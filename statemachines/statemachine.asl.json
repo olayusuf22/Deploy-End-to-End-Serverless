@@ -1,0 +1,159 @@
+{
+  "StartAt": "CreateOrder",
+  "States": {
+    "CreateOrder": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "OutputPath": "$.Payload",
+      "Parameters": {
+        "Payload.$": "$",
+        "FunctionName": "${CreateOrderFunction}"
+      },
+      "Next": "ProcessOrderPayment"
+    },
+    "ProcessOrderPayment": {
+      "Type": "Task",
+      "Resource": "${ProcessPaymentFunction}",
+      "Next": "PaymentSuccessful",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "PaymentServiceUnavailable"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "InvalidPaymentDetails"
+          ],
+          "Next": "UpdateOrder-InvalidPaymentDetails",
+          "ResultPath": "$.error"
+        },
+        {
+          "ErrorEquals": [
+            "PaymentServiceUnavailable"
+          ],
+          "Next": "UpdateOrder-PaymentServiceUnavailable",
+          "ResultPath": "$.error"
+        },
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "UpdateOrder-PaymentServiceError",
+          "ResultPath": "$.error"
+        }
+      ]
+    },
+    "UpdateOrder-PaymentServiceError": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "OutputPath": "$.Payload",
+      "Parameters": {
+        "Payload.$": "$",
+        "FunctionName": "${UpdateOrderFunction}"
+      },
+      "Next": "OrderProcessFailed"
+    },
+    "UpdateOrder-PaymentServiceUnavailable": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "OutputPath": "$.Payload",
+      "Parameters": {
+        "Payload.$": "$",
+        "FunctionName": "${UpdateOrderFunction}"
+      },
+      "Next": "OrderProcessFailed"
+    },
+    "UpdateOrder-InvalidPaymentDetails": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "OutputPath": "$.Payload",
+      "Parameters": {
+        "Payload.$": "$",
+        "FunctionName": "${UpdateOrderFunction}"
+      },
+      "Next": "OrderProcessFailed"
+    },
+    "PaymentSuccessful": {
+      "Type": "Pass",
+      "Result": "Payment Successful.",
+      "ResultPath": "$.status",
+      "Next": "UpdateInventory"
+    },
+    "UpdateInventory": {
+      "Type": "Task",
+      "Next": "InventoryUpdateSuccessful",
+      "Resource": "${UpdateInventoryFunction}",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "InventoryServiceUnavailable"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "InventoryServiceUnavailable"
+          ],
+          "Next": "InventoryServiceUnavailable",
+          "ResultPath": "$.error"
+        },
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "InventoryServiceError",
+          "ResultPath": "$.error"
+        }
+      ]
+    },
+    "InventoryServiceUnavailable": {
+      "Type": "Pass",
+      "Result": "Inventory Service Unavaiable.",
+      "ResultPath": "$.status",
+      "Next": "RevertOrderPayment"
+    },
+    "InventoryServiceError": {
+      "Type": "Pass",
+      "Result": "Inventory Service Error.",
+      "ResultPath": "$.status",
+      "Next": "RevertOrderPayment"
+    },
+    "RevertOrderPayment": {
+      "Type": "Task",
+      "Resource": "${RevertPaymentFunction}",
+      "Next": "OrderProcessFailed"
+    },
+    "InventoryUpdateSuccessful": {
+      "Type": "Pass",
+      "Result": "Inventory Update Successful.",
+      "ResultPath": "$.status",
+      "Next": "PublishOrder"
+    },
+    "PublishOrder": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sns:publish",
+      "Parameters": {
+        "TopicArn": "${OrdersCompletedSNSTopic}",
+        "Message.$": "$"
+      },
+      "Next": "OrderProcessSuccessful"
+    },
+    "OrderProcessFailed": {
+      "Type": "Fail",
+      "Error": "The order process has failed."
+    },
+    "OrderProcessSuccessful": {
+      "Type": "Succeed"
+    }
+  }
+}
